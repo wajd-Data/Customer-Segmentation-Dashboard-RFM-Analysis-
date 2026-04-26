@@ -1,0 +1,153 @@
+-- Field 1 = InvoiceNo, Field2 = StockCode, Field3 = Description, Field4 = Quantity , Field5 = InvoiceDate, Field6 = Unit price, Field7= CustomerID, Field8 = Country
+
+
+SELECT *
+FROM retail_db1;
+-- Data Cleaning 
+DELETE FROM retail_db1
+WHERE field7 IS NULL;
+
+DELETE FROM retail_db1
+WHERE field1 IS NULL;
+
+ALTER TABLE customer_summary
+ADD COLUMN clean_date TEXT ;
+
+  UPDATE customer_summary
+SET clean_date =
+substr(latest_purchase,
+       instr(latest_purchase,'/') + 
+       instr(substr(latest_purchase,
+                    instr(latest_purchase,'/')+1),'/') + 1,
+       4)
+ ||'-' ||
+printf('%02d',
+       substr(latest_purchase,1,
+              instr(latest_purchase,'/')-1))
+  ||'-' ||
+printf('%02d',
+       substr(
+           latest_purchase,
+           instr(latest_purchase,'/')+1,
+           instr(substr(latest_purchase,
+                        instr(latest_purchase,'/')+1),'/')-1
+       ));
+-- Creating AND calculating Total Price Column :
+
+ALTER TABLE retail_db1
+ADD COLUMN total_price REAL;
+
+
+UPDATE retail_db1
+set total_price = FIELD4 * FIELD6; 
+
+-- Get Data Range :
+SELECT MIN(field5), MAX(field5)
+FROM retail_db1;
+
+
+-- Customer Summary Table :
+CREATE TABLE customer_summary AS 
+SELECT
+FIELD7 as CustomerID,
+MAX(FIELD5) AS latest_purchase,
+COUNT(DISTINCT FIELD1) AS frequency,
+SUM(total_price) AS monetary
+FROM retail_db1
+GROUP BY field7;
+
+SELECT *
+FROM customer_summary;
+
+
+-- Recency Calculation :
+ALTER TABLE customer_summary
+ADD COLUMN Recency INTEGER; 
+
+UPDATE customer_summary
+SET Recency = 
+CAST ( 
+julianday('2011-12-09')
+- julianday(clean_date))
+AS INTEGER);
+
+-- Adding and Setting Recency Scores Column : 
+ALTER TABLE customer_summary
+ADD COLUMN RScore INTEGER ; 
+
+UPDATE customer_summary
+SET RScore = 
+CASE
+WHEN Recency <= 30 THEN 5 
+WHEN Recency <= 60 THEN 4
+WHEN Recency<=120 THEN 3
+WHEN Recency <= 240 THEN 2
+ELSE 1
+END;
+
+-- Adding and Setting Frequency Scores :
+
+ALTER TABLE customer_summary
+ADD COLUMN FScore INTEGER; 
+
+UPDATE customer_summary
+SET FScore = 
+CASE
+WHEN frequency>= 10 THEN 5
+WHEN frequency>=6 THEN 4
+WHEN frequency>=3 THEN 3
+WHEN frequency>=2 THEN 2
+ELSE 1
+END; 
+
+---- Adding and Setting Monetary Scores :
+
+ALTER TABLE customer_summary
+ADD COLUMN MScore INTEGER;
+
+UPDATE customer_summary 
+SET MScore = 
+CASE
+WHEN monetary >= 5000 THEN 5
+WHEN monetary >= 2500 THEN 4
+WHEN monetary >= 1000 THEN 3
+WHEN monetary >=500 THEN 2
+ELSE 1 
+END; 
+
+-- Scores combination : 
+ALTER TABLE customer_summary
+ADD COLUMN RFM TEXT;
+
+UPDATE customer_summary
+SET RFM = 
+CAST (RScore AS TEXT)||
+CAST(FScore AS TEXT)||
+CAST( MScore AS TEXT);
+
+-- Adding and Assigning Customer Segment:
+
+ALTER TABLE customer_summary
+ADD COLUMN Segment TEXT; 
+
+UPDATE customer_summary 
+SET Segment = 
+CASE
+WHEN RScore>=4 AND FScore>= 4 AND MScore >= 4 THEN 'CHAMPION' 
+WHEN RScore >= 3 AND FScore >= 3 AND MScore >=3 THEN ' LOYAL CUSTOMER' 
+WHEN RScore >=4 AND FScore >= 2 THEN 'NEW CUSTOMER'
+WHEN RScore >=2 AND FScore >= 4 THEN ' AT RISK ' 
+WHEN RScore >= 2 AND FScore >= 2 THEN 'LOST CUSTOMER' 
+ELSE ' POTENTIAL' 
+END; 
+
+
+SELECT Segment , COUNT(*) AS customers 
+FROM customer_summary
+GROUP BY Segment 
+ORDER BY customers DESC; 
+
+SELECT *
+FROM customer_summary
+LIMIT 20;
+
